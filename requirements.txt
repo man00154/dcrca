@@ -1,14 +1,29 @@
 streamlit
 langchain
-langchain-community
 langchain-core
-langchain-google-genai
+langchain-community
+langchain-groq==
+
+# Vector embeddings
+sentence-transformers
+
+# FAISS CPU (compatible with NumPy <2)
 faiss-cpu
+
+# Google Generative AI LLM & embeddings
+langchain-google-genai
+
+# Google Search API
+google-api-python-client
+
+# Utilities
 python-dotenv
 pypdf
 requests
-urllib3
-tqdm
-huggingface-hub
 beautifulsoup4
 lxml
+tqdm
+
+# Ensure compatible numpy for FAISS CPU
+numpy
+
