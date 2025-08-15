@@ -11,19 +11,22 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file and install
-COPY requirements.txt .
+# Copy requirements
+COPY requirements.txt ./ 
+
+# Install Python dependencies
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the app
-COPY . .
+# Copy app
+COPY . /app
 
 # Expose Streamlit port
 EXPOSE 8501
 
-# Run the Streamlit app
+# Run the app
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
