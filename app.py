@@ -17,19 +17,15 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- Load environment variables from .env ---
+# --- Load environment variables ---
 load_dotenv()
 
-# --- Fallback: load from Streamlit secrets if not in .env ---
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", st.secrets.get("GOOGLE_API_KEY", ""))
-GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", st.secrets.get("GOOGLE_CSE_ID", ""))
-
-# --- Validate keys ---
-if not GOOGLE_API_KEY:
-    st.error("Please set the GOOGLE_API_KEY in .env or Streamlit secrets.")
+# ✅ Check all required Google Search variables
+if not os.getenv("GOOGLE_API_KEY"):
+    st.error("Please set the GOOGLE_API_KEY environment variable.")
     st.stop()
-if not GOOGLE_CSE_ID:
-    st.error("Please set the GOOGLE_CSE_ID in .env or Streamlit secrets.")
+if not os.getenv("GOOGLE_CSE_ID"):
+    st.error("Please set the GOOGLE_CSE_ID environment variable.")
     st.stop()
 
 # --- Simulated Logs ---
@@ -56,7 +52,7 @@ def setup_rag_system():
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
         vector_store = FAISS.from_documents(texts, embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
@@ -71,28 +67,41 @@ vector_store = setup_rag_system()
 def setup_agent():
     st.info("Initializing Agentic AI...")
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2, google_api_key=GOOGLE_API_KEY)
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
 
         google_search_tool = GoogleSearchAPIWrapper(
             k=5,
-            google_api_key=GOOGLE_API_KEY,
-            google_cse_id=GOOGLE_CSE_ID
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            google_cse_id=os.getenv("GOOGLE_CSE_ID")
         )
         tools = [google_search_tool]
 
+        # ✅ Correct ReAct prompt template with required vars
         template = """
-        You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
-        {tools}
+You are a highly skilled Data Centre Root Cause Analysis (RCA) expert. 
+You have access to the following tools:
+{tools}
 
-        The incident description is: '{input}'
-        
-        The internal data center logs and information are provided below:
-        ----------------
-        {context}
-        ----------------
-        Provide a detailed root cause analysis.
-        """
-        prompt = PromptTemplate.from_template(template)
+When given an incident, think step-by-step and decide which tools to use to gather relevant data. 
+Always explain your reasoning before providing the root cause and recommendation.
+
+Incident: {input}
+
+Relevant Data Centre Logs:
+{context}
+
+You can use these tools: {tool_names}
+
+Previous reasoning and actions:
+{agent_scratchpad}
+
+Now, provide your next reasoning step or the final RCA.
+"""
+        prompt = PromptTemplate(
+            input_variables=["input", "context", "agent_scratchpad", "tool_names", "tools"],
+            template=template
+        )
+
         agent = create_react_agent(llm, tools, prompt)
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
         st.success("Agentic AI initialized successfully!")
@@ -105,11 +114,9 @@ agent_executor = setup_agent()
 
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
-st.markdown(
-    """
-    This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
-    """
-)
+st.markdown("""
+This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
+""")
 
 incident_description = st.text_area(
     "**Describe the incident:**",
@@ -138,7 +145,10 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                         height=200
                     )
 
-                    agent_output = agent_executor.invoke({"input": incident_description, "context": context_text})
+                    agent_output = agent_executor.invoke({
+                        "input": incident_description,
+                        "context": context_text
+                    })
 
                     st.divider()
                     st.info("### 🤖 Agentic AI Root Cause Analysis")
