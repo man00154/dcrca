@@ -79,8 +79,8 @@ def setup_agent():
             func=google_search.run
         )
 
-        tools = [google_search_tool]
-        tool_names = ", ".join([tool.name for tool in tools])
+        tools_list = [google_search_tool]
+        tool_names_list = ", ".join([tool.name for tool in tools_list])
 
         template = """
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
@@ -108,10 +108,10 @@ Provide the final RCA in this format:
             input_variables=["input", "context", "agent_scratchpad", "tools", "tool_names"]
         )
 
-        agent = create_react_agent(llm, tools, prompt)
+        agent = create_react_agent(llm, tools_list, prompt)
         agent_executor = AgentExecutor(
             agent=agent,
-            tools=tools,
+            tools=tools_list,
             verbose=True,
             handle_parsing_errors=True,
             max_iterations=3,
@@ -119,12 +119,12 @@ Provide the final RCA in this format:
         )
 
         st.success("Agentic AI initialized successfully!")
-        return agent_executor
+        return agent_executor, tools_list, tool_names_list
     except Exception as e:
         st.error(f"Failed to initialize Agentic AI: {e}")
-        return None
+        return None, None, None
 
-agent_executor = setup_agent()
+agent_executor, tools, tool_names = setup_agent()
 
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
