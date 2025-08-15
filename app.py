@@ -100,8 +100,13 @@ if st.button("Perform RCA", type="primary"):
         st.markdown("---")
         st.subheader("Analysis Result")
         with st.spinner("Analyzing data and generating root cause..."):
-            # Use asyncio to run the async function
-            loop = asyncio.get_event_loop()
+            # Safely create an event loop in Python 3.13+
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
             result = loop.run_until_complete(get_root_cause_from_llm(incident_data, initial_alert))
             
             if result:
