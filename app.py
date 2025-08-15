@@ -11,6 +11,8 @@ from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
 from langchain.docstore.document import Document
 from langchain.tools import Tool
+import hashlib
+import pickle
 
 # --- Streamlit Page Config ---
 st.set_page_config(
@@ -21,15 +23,46 @@ st.set_page_config(
 
 # --- Load environment variables ---
 load_dotenv()
-
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not GOOGLE_API_KEY:
-    st.warning("⚠ GOOGLE_API_KEY not found — will use fallback model if Gemini is unavailable.")
-if not GOOGLE_CSE_ID:
-    st.warning("⚠ GOOGLE_CSE_ID not found — Google Search tool may not work.")
+# --- Cache Setup ---
+CACHE_FILE = "gemini_cache.pkl"
+if os.path.exists(CACHE_FILE):
+    with open(CACHE_FILE, "rb") as f:
+        GEMINI_CACHE = pickle.load(f)
+else:
+    GEMINI_CACHE = {}
+
+if "session_cache" not in st.session_state:
+    st.session_state.session_cache = {}
+
+def cache_response(key, response=None):
+    """Get or set cached response."""
+    global GEMINI_CACHE
+    if response is None:
+        if key in st.session_state.session_cache:
+            return st.session_state.session_cache[key]
+        return GEMINI_CACHE.get(key)
+    else:
+        st.session_state.session_cache[key] = response
+        GEMINI_CACHE[key] = response
+        with open(CACHE_FILE, "wb") as f:
+            pickle.dump(GEMINI_CACHE, f)
+
+# --- Cache Management UI ---
+st.sidebar.markdown("## ⚙️ Cache Management")
+if st.sidebar.button("Clear Session Cache"):
+    st.session_state.session_cache = {}
+    st.sidebar.success("✅ Session cache cleared.")
+
+if st.sidebar.button("Clear Disk Cache"):
+    GEMINI_CACHE.clear()
+    if os.path.exists(CACHE_FILE):
+        os.remove(CACHE_FILE)
+    st.session_state.session_cache = {}
+    st.sidebar.success("✅ Disk cache cleared.")
 
 # --- Simulated Logs ---
 st.markdown("## 🧠 Simulated Data Base")
@@ -52,7 +85,6 @@ with st.expander("Expand to see the simulated log data"):
 def setup_rag_system():
     st.info("Initializing RAG system (Vector Store)...")
     try:
-        # Ensure event loop exists in this thread
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -81,28 +113,44 @@ vector_store = setup_rag_system()
 def setup_agent():
     st.info("Initializing Agentic AI...")
 
+    llm = None
     try:
         if GOOGLE_API_KEY:
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash-latest",
-                temperature=0.2,
-                google_api_key=GOOGLE_API_KEY
-            )
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model="gemini-1.5-flash-latest",
+                    temperature=0.2,
+                    google_api_key=GOOGLE_API_KEY
+                )
+                llm.invoke("Hello")
+                st.info("Using Gemini LLM.")
+            except Exception as gemini_error:
+                st.warning(f"⚠ Gemini API unavailable or quota exceeded. Switching to OpenAI. ({gemini_error})")
+                if not OPENAI_API_KEY:
+                    st.error("No fallback API key found — cannot initialize LLM.")
+                    return None, None, None
+                llm = ChatOpenAI(
+                    model="gpt-4o-mini",
+                    temperature=0.2,
+                    openai_api_key=OPENAI_API_KEY
+                )
+                st.info("Using fallback OpenAI LLM.")
         else:
-            raise ValueError("No GOOGLE_API_KEY found")
+            if not OPENAI_API_KEY:
+                st.error("No API key found — cannot initialize any LLM.")
+                return None, None, None
+            llm = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0.2,
+                openai_api_key=OPENAI_API_KEY
+            )
+            st.info("Using fallback OpenAI LLM.")
     except Exception as e:
-        st.warning(f"⚠ Gemini API not available — switching to OpenAI. ({e})")
-        if not OPENAI_API_KEY:
-            st.error("No fallback API key found — cannot initialize LLM.")
-            return None, None, None
-        llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            openai_api_key=OPENAI_API_KEY
-        )
+        st.error(f"Failed to initialize LLM: {e}")
+        return None, None, None
 
+    google_search_tool = None
     try:
-        google_search_tool = None
         if GOOGLE_API_KEY and GOOGLE_CSE_ID:
             google_search = GoogleSearchAPIWrapper(
                 k=5,
@@ -114,11 +162,13 @@ def setup_agent():
                 description="Useful for real-time internet information.",
                 func=google_search.run
             )
+    except Exception as e:
+        st.warning(f"Google Search tool initialization failed: {e}")
 
-        tools_list = [google_search_tool] if google_search_tool else []
-        tool_names_list = ", ".join([tool.name for tool in tools_list]) if tools_list else "None"
+    tools_list = [google_search_tool] if google_search_tool else []
+    tool_names_list = ", ".join([tool.name for tool in tools_list]) if tools_list else "None"
 
-        template = """
+    template = """
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 You can use the following tools:
 {tools}
@@ -139,11 +189,12 @@ Provide the final RCA in this format:
 **Root Cause:** <Explain the technical cause here>
 **Solution:** <Step-by-step remediation actions here>
 """
-        prompt = PromptTemplate(
-            template=template,
-            input_variables=["input", "context", "agent_scratchpad", "tools", "tool_names"]
-        )
+    prompt = PromptTemplate(
+        template=template,
+        input_variables=["input", "context", "agent_scratchpad", "tools", "tool_names"]
+    )
 
+    try:
         agent = create_react_agent(llm, tools_list, prompt)
         agent_executor = AgentExecutor(
             agent=agent,
@@ -153,7 +204,6 @@ Provide the final RCA in this format:
             max_iterations=12,
             max_execution_time=90
         )
-
         st.success("Agentic AI initialized successfully!")
         return agent_executor, tools_list, tool_names_list
     except Exception as e:
@@ -180,27 +230,37 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
             st.error("Application components failed to initialize.")
         else:
             with st.spinner("Analyzing incident... This may take a moment."):
-                try:
-                    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-                    retrieved_docs = retriever.invoke(incident_description)
-                    context_text = "\n".join([doc.page_content for doc in retrieved_docs])
-
-                    st.divider()
-                    st.info("### 📝 Relevant Logs from RAG")
-                    st.text_area("RAG Retrieved:", context_text, height=200)
-
-                    agent_output = agent_executor.invoke({
-                        "input": incident_description,
-                        "context": context_text,
-                        "tools": tools,
-                        "tool_names": tool_names
-                    })
-
+                key = hashlib.sha256(incident_description.encode("utf-8")).hexdigest()
+                cached_output = cache_response(key)
+                if cached_output:
+                    st.info("Using cached RCA output (Gemini quota saved).")
                     st.divider()
                     st.info("### 🤖 Agentic AI RCA")
-                    if isinstance(agent_output, dict) and "output" in agent_output:
-                        st.markdown(agent_output["output"])
-                    else:
-                        st.markdown(str(agent_output))
-                except Exception as e:
-                    st.error(f"An error occurred during analysis: {e}")
+                    st.markdown(cached_output)
+                else:
+                    try:
+                        retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+                        retrieved_docs = retriever.invoke(incident_description)
+                        context_text = "\n".join([doc.page_content for doc in retrieved_docs])
+
+                        st.divider()
+                        st.info("### 📝 Relevant Logs from RAG")
+                        st.text_area("RAG Retrieved:", context_text, height=200)
+
+                        agent_output = agent_executor.invoke({
+                            "input": incident_description,
+                            "context": context_text,
+                            "tools": tools,
+                            "tool_names": tool_names
+                        })
+
+                        st.divider()
+                        st.info("### 🤖 Agentic AI RCA")
+                        if isinstance(agent_output, dict) and "output" in agent_output:
+                            st.markdown(agent_output["output"])
+                            cache_response(key, agent_output["output"])
+                        else:
+                            st.markdown(str(agent_output))
+                            cache_response(key, str(agent_output))
+                    except Exception as e:
+                        st.error(f"An error occurred during analysis: {e}")
