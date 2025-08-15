@@ -1,13 +1,31 @@
+# Streamlit for UI
 streamlit
+
+# LangChain core
 langchain
+
+# LangChain community modules (vectorstores, chat_models, etc.)
 langchain-community
+
+# Google Generative AI integration
 langchain-google-genai
-python-dotenv
+
+# LLMs fallback
+openai
+
+# Embeddings / VectorDB
 faiss-cpu
+
+# PDF & Document parsing
 pypdf
+
+# Utilities
+python-dotenv
 requests
 urllib3
 tqdm
 huggingface-hub
+
+# Web scraping
 beautifulsoup4
 lxml
