@@ -1,109 +1,234 @@
-import streamlit as st
-import json
-import base64
-import asyncio
-import aiohttp  # Added for async HTTP requests
+# =============================================================
+# FILE: requirements.txt
+# =============================================================
+# This file lists the Python packages required for the application.
+# It's used by pip to install all dependencies, and by the Dockerfile.
+streamlit
+google-generativeai
+langchain
+langchain_google_genai
+faiss-cpu
+scikit-learn
+python-dotenv
+tiktoken
+langchain-community
 
-# The `st.set_page_config` should be the first Streamlit command
+# =============================================================
+# FILE: Dockerfile
+# =============================================================
+# This Dockerfile builds a container image for the Streamlit application.
+# It ensures a consistent environment for deployment.
+
+# Use an official Python runtime as a parent image
+FROM python:3.9-slim
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the requirements file into the container at /app
+COPY requirements.txt ./
+
+# Install any needed packages specified in requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application source code into the container at /app
+COPY . .
+
+# Expose port 8501, which is the default port for Streamlit
+EXPOSE 8501
+
+# Command to run the Streamlit application
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
+# =============================================================
+# FILE: app.py
+# =============================================================
+import streamlit as st
+import os
+import faiss
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_community.tools.google_search import GoogleSearchAPIWrapper
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.docstore.document import Document
+
+# Set up Streamlit page configuration
 st.set_page_config(
-    page_title="MFG ITIS TCS TEAM - Intelligent Data Centre RCA",
+    page_title="MFG ITIS TEAM - Intelligent Data Centre RCA",
     page_icon="🤖",
-    layout="wide"
+    layout="wide",
 )
 
-# Function to make the API call to the LLM
-async def get_root_cause_from_llm(incident_data, initial_alert):
-    """
-    Calls the Gemini API to get a root cause analysis.
-    
-    This function uses aiohttp to send an async HTTP POST request.
-    """
-    
-    # Construct the detailed prompt for the LLM
-    prompt = (
-        "You are an expert data center operations engineer. Your task is to perform a root cause analysis (RCA) "
-        "for a technical incident. Analyze the provided logs and the initial alert to identify the "
-        "single most likely root cause. Be concise, direct, and professional in your response. "
-        "Avoid conjecture and focus on the technical details. "
-        "Your output should be the root cause and a brief explanation.\n\n"
-        "Initial Alert: {initial_alert}\n\n"
-        "Logs/Data:\n{incident_data}\n\n"
-        "Root Cause Analysis:"
-    ).format(initial_alert=initial_alert, incident_data=incident_data)
+# Load environment variables (API keys)
+# Ensure you have a .env file with GOOGLE_API_KEY and GOOGLE_SEARCH_API_KEY
+# You can get these from the Google Cloud Console.
+# You will also need to enable the Custom Search API.
+from dotenv import load_dotenv
+load_dotenv()
 
-    chatHistory = []
-    chatHistory.append({ "role": "user", "parts": [{ "text": prompt }] })
-    payload = {
-        "contents": chatHistory
-    }
+# --- Gemini API Key and Search API Key Setup ---
+# The environment variables are expected to be set for the app to work.
+if not os.getenv("GOOGLE_API_KEY"):
+    st.error("Please set the GOOGLE_API_KEY environment variable.")
+    st.stop()
+if not os.getenv("GOOGLE_SEARCH_API_KEY") or not os.getenv("GOOGLE_SEARCH_API_ID"):
+    st.warning("Google Search API keys are not set. The agent will not be able to perform web searches.")
 
-    # IMPORTANT: Replace with your actual Gemini API key
-    apiKey = "AIzaSyA2W2u4HUZFll-UTlqCrRngAhVIphsrrns"
-    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key={apiKey}"
+# --- Simulated Data Centre Knowledge Base ---
+# In a real-world scenario, this would be a large collection of real logs,
+# incident reports, and system documentation.
+st.markdown("## 🧠 Simulated Data Base")
+with st.expander("Expand to see the simulated log data"):
+    data_centre_logs = [
+        "Network-01: HIGH latency detected on switch port 3. Packet drops > 50%. BGP peer 10.10.1.5 is flapping.",
+        "Server-03: CPU utilization 98% for process `db_backup`. Memory usage 95%. I/O wait is high.",
+        "Network-01: Resolved issue with BGP peer. The upstream provider had a configuration error. Connection restored.",
+        "Storage-05: Disk full on `/var/log`. No new logs can be written. `df -h` shows 100% usage.",
+        "Server-12: The `nginx` service is not responding. A dependency service `auth-service` failed to start.",
+        "Database-01: High number of deadlocks in transactions. Query `SELECT * FROM large_table` is running without an index.",
+        "Server-03: `db_backup` process completed. CPU and memory usage returned to normal levels. Logs show normal operations.",
+        "Network-02: Power supply failure on top-of-rack switch. Traffic re-routed successfully via redundant path.",
+        "Server-12: `auth-service` was restarted manually. `nginx` is now responding as expected. No further issues detected.",
+    ]
+    st.json(data_centre_logs)
 
-    headers = {
-        'Content-Type': 'application/json'
-    }
-
+# --- RAG System Setup ---
+# This function sets up the Retrieval-Augmented Generation system.
+@st.cache_resource
+def setup_rag_system():
+    st.info("Initializing RAG system (Vector Store)...")
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(apiUrl, headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    st.error(f"API returned status code {resp.status}")
-                    return None
-                response_data = await resp.json()
-        
-        if response_data.get('candidates'):
-            return response_data['candidates'][0]['content']['parts'][0]['text']
-        else:
-            st.error("No valid response from the API. Please check the logs and try again.")
-            st.json(response_data)
-            return None
+        # Create a text splitter to chunk our data
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        docs = [Document(page_content=log) for log in data_centre_logs]
+        texts = text_splitter.split_documents(docs)
+
+        # Create embeddings and a FAISS vector store
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        vector_store = FAISS.from_documents(texts, embeddings)
+        st.success("RAG system initialized successfully!")
+        return vector_store
     except Exception as e:
-        st.error(f"An error occurred during the API call: {e}")
+        st.error(f"Failed to initialize RAG system: {e}")
         return None
 
+vector_store = setup_rag_system()
+
+# --- Agentic AI Setup ---
+# This function sets up the LLM agent with tools.
+@st.cache_resource
+def setup_agent():
+    st.info("Initializing Agentic AI...")
+    try:
+        # Initialize the LLM
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
+
+        # Set up the Google Search tool
+        google_search_tool = GoogleSearchAPIWrapper(k=5)
+        tools = [google_search_tool]
+
+        # Define the prompt template for the agent
+        # This prompt is critical for guiding the agent's behavior.
+        template = """
+        You are a highly skilled Data Centre Root Cause Analysis (RCA) expert. Your task is to analyze incident reports and logs to accurately identify the root cause, propose solutions, and explain your reasoning clearly and concisely.
+
+        You have access to the following tools:
+        {tools}
+
+        The incident description is: '{input}'
+        
+        The internal data center logs and information are provided below. This is your primary source of truth.
+        ----------------
+        {context}
+        ----------------
+
+        First, analyze the provided logs and the incident description to find the root cause.
+        If the internal logs do not provide a clear answer, or if you need more general information to understand the problem, you may use the Google Search tool.
+        
+        Your response must follow this structure exactly:
+        
+        **Incident Summary:**
+        [A brief summary of the incident based on the user's input.]
+        
+        **Root Cause Analysis:**
+        [Detailed analysis of the root cause. Reference specific logs from the provided context. If you used Google Search, mention what you learned from it. Explain your logical reasoning.]
+        
+        **Proposed Solution:**
+        [A clear, actionable solution or a set of steps to resolve the issue. Be specific.]
+        
+        **Preventative Measures:**
+        [Suggestions for what could be done to prevent this type of incident from happening again.]
+        
+        **Confidence Score:**
+        [Provide a confidence score from 1-100% on your analysis, explaining why you chose this score.]
+
+        Begin!
+        """
+
+        prompt = PromptTemplate.from_template(template)
+
+        # Create the agent
+        agent = create_react_agent(llm, tools, prompt)
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+
+        st.success("Agentic AI initialized successfully!")
+        return agent_executor
+    except Exception as e:
+        st.error(f"Failed to initialize Agentic AI: {e}")
+        return None
+
+agent_executor = setup_agent()
+
 # --- Streamlit UI ---
-st.title("🤖 MFG ITIS TCS TEAM - Intelligent Data Centre Incident RCA")
-st.markdown("---")
-
-st.markdown("""
-This application uses a large language model to help you perform a preliminary root cause analysis (RCA) on data centre incidents.
-Simply provide the initial alert and relevant log data, and the model will provide a likely root cause.
-
-**Disclaimer:** This is an AI-powered tool. The analysis provided should be considered a starting point and must be verified by a human expert before any action is taken.
-""")
-
-# Input fields
-st.markdown("### Incident Details")
-initial_alert = st.text_input(
-    "Initial Alert Message",
-    placeholder="e.g., 'High CPU utilization on DB server-01'"
-)
-incident_data = st.text_area(
-    "Log Data & Monitoring Alerts",
-    height=300,
-    placeholder="Paste all relevant logs, alerts, and metrics here."
+st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
+st.markdown(
+    """
+    This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
+    It uses a Retrieval-Augmented Generation (RAG) system to find relevant logs and an Agentic AI to
+    synthesize a detailed report.
+    """
 )
 
-# Analysis button
-if st.button("Perform RCA", type="primary"):
-    if not initial_alert or not incident_data:
-        st.warning("Please provide both the initial alert and incident data.")
+# User input for the incident
+incident_description = st.text_area(
+    "**Describe the incident:**",
+    value="The website is down. We're seeing slow performance on the home page and authentication is failing.",
+    height=150
+)
+
+# Button to trigger the analysis
+if st.button("Analyze Incident", type="primary", use_container_width=True):
+    if not incident_description:
+        st.warning("Please provide a description of the incident.")
     else:
-        st.markdown("---")
-        st.subheader("Analysis Result")
-        with st.spinner("Analyzing data and generating root cause..."):
-            # Safely create an event loop in Python 3.13+
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            result = loop.run_until_complete(get_root_cause_from_llm(incident_data, initial_alert))
-            
-            if result:
-                st.info(result)
-            else:
-                st.error("Failed to get an analysis result. Please check the provided data and try again.")
+        if not vector_store or not agent_executor:
+            st.error("Application components failed to initialize. Please check API keys and logs.")
+        else:
+            with st.spinner("Analyzing incident... This may take a moment."):
+                try:
+                    # RAG Step: Retrieve relevant logs based on the incident description
+                    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+                    retrieved_docs = retriever.invoke(incident_description)
+                    context_text = "\n".join([doc.page_content for doc in retrieved_docs])
+                    
+                    st.divider()
+                    st.info("### 📝 Relevant Logs and Context from RAG")
+                    st.text_area(
+                        "RAG System Retrieved the following relevant documents:",
+                        context_text,
+                        height=200
+                    )
+                    
+                    # Agent Step: Use the LLM to perform the analysis
+                    agent_output = agent_executor.invoke({"input": incident_description, "context": context_text})
+                    
+                    st.divider()
+                    st.info("### 🤖 Agentic AI Root Cause Analysis")
+                    st.markdown(agent_output["output"])
+                    
+                except Exception as e:
+                    st.error(f"An error occurred during analysis: {e}")
