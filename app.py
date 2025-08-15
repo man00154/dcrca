@@ -81,14 +81,16 @@ def setup_agent():
 
         tools = [google_search_tool]
 
-        # FIX: Added required placeholders {tool_names} and {agent_scratchpad}
+        # FIX: Added required placeholders {tools}, {tool_names}, {agent_scratchpad}
         template = """
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
-You have access to the following tools:
-{tool_names}
+You can use the following tools:
+{tools}
 
-Use these tools when necessary to find the RCA for the incident.
-Follow a step-by-step reasoning approach before answering.
+Tool names: {tool_names}
+
+When analyzing an incident, decide if you need to use any of the tools above.
+Always reason step-by-step before giving your final answer.
 
 Incident description:
 {input}
@@ -98,7 +100,7 @@ Internal logs & context:
 {context}
 ----------------
 
-Thought process:
+Reasoning & intermediate steps:
 {agent_scratchpad}
 """
         prompt = PromptTemplate.from_template(template)
