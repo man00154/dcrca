@@ -1,10 +1,4 @@
 streamlit
-langchain
-faiss-cpu
 python-dotenv
-pypdf
-requests
-urllib3
-tqdm
-huggingface-hub
+langchain
 langchain-google-genai
