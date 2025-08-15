@@ -1,90 +1,114 @@
 import streamlit as st
+import json
+import asyncio
+import aiohttp
+import io
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.chat_models import ChatOpenAI
-import traceback
 
-# --- Load environment variables ---
-load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Define the Gemini model to use
+MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
 
-# --- Streamlit UI ---
-st.set_page_config(
-    page_title="TCS MFG ITIS - Intelligent Data Centre RCA",
-    page_icon="🤖",
-    layout="wide",
-)
-st.title("🤖 TCS MFG ITIS - Intelligent Data Centre Incident RCA")
-st.markdown("AI-powered tool to generate Root Cause Analysis (RCA) and Solutions.")
+async def analyze_logs_with_llm(logs):
+    """
+    Asynchronously calls the Gemini API to analyze the provided logs.
+    """
+    api_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        st.error("API key not found. Please set GEMINI_API_KEY in Streamlit secrets or environment variables.")
+        return "Missing API key."
 
-incident_description = st.text_area(
-    "**Describe the incident:**",
-    value="Network-03: Users reporting intermittent connectivity; BGP sessions flapping; high I/O latency on servers.",
-    height=150
-)
+    headers = {
+        'Content-Type': 'application/json',
+    }
 
-def initialize_llm():
-    """Initialize LLM: Try Gemini first, fallback to OpenAI if quota exceeded."""
-    llm = None
-    try:
-        if GOOGLE_API_KEY:
-            try:
-                llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash-latest",
-                    temperature=0.2,
-                    google_api_key=GOOGLE_API_KEY
-                )
-                llm.invoke("Hello")  # test call
-                st.info("Using Gemini LLM.")
-            except Exception as gemini_error:
-                st.warning(f"⚠ Gemini API unavailable or quota exceeded. Switching to OpenAI.\n{gemini_error}")
-                if not OPENAI_API_KEY:
-                    st.error("No fallback OpenAI API key found — cannot initialize LLM.")
-                    return None
-                llm = ChatOpenAI(
-                    model="gpt-4o-mini",
-                    temperature=0.2,
-                    openai_api_key=OPENAI_API_KEY
-                )
-                st.info("Using fallback OpenAI LLM.")
-        else:
-            if not OPENAI_API_KEY:
-                st.error("No API key found — cannot initialize any LLM.")
-                return None
-            llm = ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=0.2,
-                openai_api_key=OPENAI_API_KEY
-            )
-            st.info("Using fallback OpenAI LLM.")
-    except Exception as e:
-        st.error(f"Failed to initialize LLM:\n{traceback.format_exc()}")
-        return None
-    return llm
+    prompt = f"""
+    You are a skilled Data Centre Root Cause Analysis (RCA) expert.
+    Analyze the following logs and provide a clear summary:
 
-llm = initialize_llm()
+    {logs}
 
-if st.button("Generate RCA & Solution"):
-    if not incident_description.strip():
-        st.warning("Please provide a description of the incident.")
-    elif not llm:
-        st.error("LLM not initialized. Cannot proceed.")
-    else:
-        st.info("Analyzing incident...")
+    Format the response with headings:
+
+    **Root Cause:** <Explain the technical cause>
+    **Solution:** <Step-by-step remediation actions>
+    """
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "text/plain",
+        }
+    }
+
+    retries = 0
+    while retries < 5:
         try:
-            prompt = f"""
-You are a skilled Data Centre Root Cause Analysis (RCA) expert.
-Incident description: {incident_description}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{API_URL}?key={api_key}", headers=headers, json=payload) as response:
+                    if response.status == 429 or response.status >= 500:
+                        delay = 2 ** retries
+                        st.warning(f"API call failed with status {response.status}. Retrying in {delay} seconds...")
+                        await asyncio.sleep(delay)
+                        retries += 1
+                        continue
 
-Provide the RCA and recommended solution in this format:
+                    response.raise_for_status()
+                    result = await response.json()
 
-**Root Cause:** <Explain the technical cause>
-**Solution:** <Step-by-step remediation actions>
-"""
-            response = llm.invoke(prompt)
-            st.markdown("### 🤖 RCA & Solution")
-            st.markdown(response)
-        except Exception as e:
-            st.error(f"Error generating RCA:\n{traceback.format_exc()}")
+                    if result.get("candidates"):
+                        return result["candidates"][0]["content"]["parts"][0]["text"]
+                    else:
+                        st.error("Error: Could not get a valid response from the API.")
+                        return "No analysis could be generated."
+
+        except aiohttp.ClientError as e:
+            st.error(f"Network or client error: {e}")
+            return "An error occurred while connecting to the API."
+        except json.JSONDecodeError as e:
+            st.error(f"Error decoding JSON response: {e}")
+            return "An error occurred while processing the API response."
+
+    st.error("Max retries reached. Could not complete the API request.")
+    return "Failed to get a response from the API after several retries."
+
+def main():
+    st.set_page_config(page_title="Intelligent Data Centre RCA", layout="wide")
+    st.title("🤖 TCS MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
+    st.markdown("Paste logs or upload a file. The LLM will provide Root Cause Analysis and Solution.")
+
+    uploaded_file = st.file_uploader("Upload a log file", type=["log", "txt"])
+    logs_input = ""
+
+    if uploaded_file is not None:
+        string_io = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
+        logs_input = string_io.read()
+    else:
+        logs_input = st.text_area("Or paste logs here:", height=300, placeholder="e.g., system logs, network logs, NGINX logs, etc.")
+
+    if st.button("Generate RCA & Solution", use_container_width=True):
+        if logs_input.strip():
+            with st.spinner("Analyzing logs..."):
+                llm_analysis = asyncio.run(analyze_logs_with_llm(logs_input))
+                st.session_state["llm_analysis_result"] = llm_analysis
+                st.subheader("Analysis Results")
+                st.markdown(llm_analysis)
+        else:
+            st.warning("Please paste some logs or upload a file to analyze.")
+
+    if "llm_analysis_result" in st.session_state and st.session_state["llm_analysis_result"]:
+        st.download_button(
+            label="Download Analysis",
+            data=st.session_state["llm_analysis_result"],
+            file_name="data_centre_rca.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+
+if __name__ == "__main__":
+    main()
