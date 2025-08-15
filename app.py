@@ -81,21 +81,31 @@ def setup_agent():
 
         tools = [google_search_tool]
 
+        # FIX: Added required placeholders {tool_names} and {agent_scratchpad}
         template = """
-        You are a highly skilled Data Centre Root Cause Analysis (RCA) expert...
-        {tools}
+You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
+You have access to the following tools:
+{tool_names}
 
-        The incident description is: '{input}'
-        
-        The internal data center logs and information are provided below:
-        ----------------
-        {context}
-        ----------------
-        ...
-        """
+Use these tools when necessary to find the RCA for the incident.
+Follow a step-by-step reasoning approach before answering.
+
+Incident description:
+{input}
+
+Internal logs & context:
+----------------
+{context}
+----------------
+
+Thought process:
+{agent_scratchpad}
+"""
         prompt = PromptTemplate.from_template(template)
+
         agent = create_react_agent(llm, tools, prompt)
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+
         st.success("Agentic AI initialized successfully!")
         return agent_executor
     except Exception as e:
