@@ -5,7 +5,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper  # ✅ Fixed import
+from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -22,11 +22,13 @@ st.set_page_config(
 # --- Load environment variables ---
 load_dotenv()
 
+# ✅ Check all required Google Search variables
 if not os.getenv("GOOGLE_API_KEY"):
     st.error("Please set the GOOGLE_API_KEY environment variable.")
     st.stop()
-if not os.getenv("GOOGLE_SEARCH_API_KEY") or not os.getenv("GOOGLE_SEARCH_API_ID"):
-    st.warning("Google Search API keys are not set. The agent will not be able to perform web searches.")
+if not os.getenv("GOOGLE_CSE_ID"):
+    st.error("Please set the GOOGLE_CSE_ID environment variable.")
+    st.stop()
 
 # --- Simulated Logs ---
 st.markdown("## 🧠 Simulated Data Base")
@@ -68,7 +70,13 @@ def setup_agent():
     st.info("Initializing Agentic AI...")
     try:
         llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
-        google_search_tool = GoogleSearchAPIWrapper(k=5)
+
+        # ✅ Pass the env variables into GoogleSearchAPIWrapper
+        google_search_tool = GoogleSearchAPIWrapper(
+            k=5,
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            google_cse_id=os.getenv("GOOGLE_CSE_ID")
+        )
         tools = [google_search_tool]
 
         template = """
