@@ -1,2 +1,9 @@
 streamlit
-aiohttp
+google-generativeai
+langchain
+langchain_google_genai
+faiss-cpu
+scikit-learn
+python-dotenv
+tiktoken
+langchain-community
