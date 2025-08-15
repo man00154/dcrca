@@ -23,9 +23,10 @@ st.set_page_config(
 
 # --- Load environment variables ---
 load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # --- Cache Setup ---
 CACHE_FILE = "gemini_cache.pkl"
@@ -39,12 +40,9 @@ if "session_cache" not in st.session_state:
     st.session_state.session_cache = {}
 
 def cache_response(key, response=None):
-    """Get or set cached response."""
     global GEMINI_CACHE
     if response is None:
-        if key in st.session_state.session_cache:
-            return st.session_state.session_cache[key]
-        return GEMINI_CACHE.get(key)
+        return st.session_state.session_cache.get(key) or GEMINI_CACHE.get(key)
     else:
         st.session_state.session_cache[key] = response
         GEMINI_CACHE[key] = response
@@ -56,7 +54,6 @@ st.sidebar.markdown("## ⚙️ Cache Management")
 if st.sidebar.button("Clear Session Cache"):
     st.session_state.session_cache = {}
     st.sidebar.success("✅ Session cache cleared.")
-
 if st.sidebar.button("Clear Disk Cache"):
     GEMINI_CACHE.clear()
     if os.path.exists(CACHE_FILE):
@@ -99,7 +96,6 @@ def setup_rag_system():
             google_api_key=GOOGLE_API_KEY
         )
         vector_store = FAISS.from_documents(texts, embeddings)
-
         st.success("RAG system initialized successfully!")
         return vector_store
     except Exception as e:
@@ -115,43 +111,39 @@ def setup_agent():
 
     llm = None
     try:
-        if GOOGLE_API_KEY:
+        # Use Gemini if API key available
+        if GEMINI_API_KEY:
             try:
                 llm = ChatGoogleGenerativeAI(
                     model="gemini-1.5-flash-latest",
                     temperature=0.2,
-                    google_api_key=GOOGLE_API_KEY
+                    google_api_key=GEMINI_API_KEY
                 )
-                llm.invoke("Hello")
+                llm.invoke("Hello")  # Test
                 st.info("Using Gemini LLM.")
-            except Exception as gemini_error:
-                st.warning(f"⚠ Gemini API unavailable or quota exceeded. Switching to OpenAI. ({gemini_error})")
-                if not OPENAI_API_KEY:
-                    st.error("No fallback API key found — cannot initialize LLM.")
-                    return None, None, None
-                llm = ChatOpenAI(
-                    model="gpt-4o-mini",
-                    temperature=0.2,
-                    openai_api_key=OPENAI_API_KEY
-                )
-                st.info("Using fallback OpenAI LLM.")
-        else:
+            except Exception as e:
+                st.warning(f"⚠ Gemini unavailable. Switching to OpenAI. ({e})")
+                llm = None
+
+        # Fallback to OpenAI if needed
+        if llm is None:
             if not OPENAI_API_KEY:
-                st.error("No API key found — cannot initialize any LLM.")
+                st.error("No valid LLM API key found.")
                 return None, None, None
             llm = ChatOpenAI(
                 model="gpt-4o-mini",
                 temperature=0.2,
                 openai_api_key=OPENAI_API_KEY
             )
-            st.info("Using fallback OpenAI LLM.")
+            st.info("Using OpenAI LLM.")
     except Exception as e:
         st.error(f"Failed to initialize LLM: {e}")
         return None, None, None
 
+    # Google Search tool
     google_search_tool = None
-    try:
-        if GOOGLE_API_KEY and GOOGLE_CSE_ID:
+    if GOOGLE_API_KEY and GOOGLE_CSE_ID:
+        try:
             google_search = GoogleSearchAPIWrapper(
                 k=5,
                 google_api_key=GOOGLE_API_KEY,
@@ -162,8 +154,8 @@ def setup_agent():
                 description="Useful for real-time internet information.",
                 func=google_search.run
             )
-    except Exception as e:
-        st.warning(f"Google Search tool initialization failed: {e}")
+        except Exception as e:
+            st.warning(f"Google Search tool initialization failed: {e}")
 
     tools_list = [google_search_tool] if google_search_tool else []
     tool_names_list = ", ".join([tool.name for tool in tools_list]) if tools_list else "None"
@@ -229,11 +221,11 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
         if not vector_store or not agent_executor:
             st.error("Application components failed to initialize.")
         else:
-            with st.spinner("Analyzing incident... This may take a moment."):
+            with st.spinner("Analyzing incident..."):
                 key = hashlib.sha256(incident_description.encode("utf-8")).hexdigest()
                 cached_output = cache_response(key)
                 if cached_output:
-                    st.info("Using cached RCA output (Gemini quota saved).")
+                    st.info("Using cached RCA output.")
                     st.divider()
                     st.info("### 🤖 Agentic AI RCA")
                     st.markdown(cached_output)
