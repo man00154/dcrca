@@ -89,12 +89,16 @@ def setup_rag_system():
         except RuntimeError:
             asyncio.set_event_loop(asyncio.new_event_loop())
 
+        # --- Split documents ---
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
 
-        # Use InMemoryVectorStore instead of VectorstoreIndexWrapper
-        vector_store = InMemoryVectorStore.from_documents(texts, embeddings=None)
+        # --- Use embeddings ---
+        embeddings = GoogleGenerativeAIEmbeddings(google_api_key=GOOGLE_API_KEY)
+
+        # --- Create in-memory vector store ---
+        vector_store = InMemoryVectorStore.from_documents(texts, embeddings=embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
     except Exception as e:
