@@ -4,13 +4,7 @@ from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-
-# ✅ Updated import for ChatOpenAI
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError:
-    from langchain_community.chat_models import ChatOpenAI
-
+from langchain_community.chat_models import ChatOpenAI  # <-- Changed import here
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
@@ -88,7 +82,7 @@ def setup_agent():
         if not OPENAI_API_KEY:
             st.error("No fallback API key found — cannot initialize LLM.")
             return None, None, None
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, api_key=OPENAI_API_KEY)
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, openai_api_key=OPENAI_API_KEY)
 
     try:
         # Google Search Tool (optional)
