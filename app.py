@@ -24,6 +24,7 @@ st.set_page_config(
 # --- Load environment variables ---
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CSE_KEY = os.getenv("GOOGLE_CSE_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -71,7 +72,7 @@ with st.expander("Expand to see the simulated log data"):
         "Server-03: CPU utilization 98% for process `db_backup`. Memory usage 95%. I/O wait is high.",
         "Network-01: Resolved issue with BGP peer. The upstream provider had a configuration error. Connection restored.",
         "Storage-05: Disk full on `/var/log`. No new logs can be written. `df -h` shows 100% usage.",
-        "Server-12: The `nginx` service is not responding. A dependency service `auth-service` failed to start.",
+        "Server-12: `nginx` service is not responding. A dependency service `auth-service` failed to start.",
         "Database-01: High number of deadlocks in transactions. Query `SELECT * FROM large_table` is running without an index.",
         "Server-03: `db_backup` process completed. CPU and memory usage returned to normal levels. Logs show normal operations.",
         "Network-02: Power supply failure on top-of-rack switch. Traffic re-routed successfully via redundant path.",
@@ -79,7 +80,7 @@ with st.expander("Expand to see the simulated log data"):
     ]
     st.json(data_centre_logs)
 
-# --- RAG Setup (In-Memory Vector Store) ---
+# --- RAG Setup ---
 @st.cache_resource
 def setup_rag_system():
     st.info("Initializing RAG system (In-Memory Vector Store)...")
@@ -93,11 +94,7 @@ def setup_rag_system():
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
 
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model="textembedding-gecko-001",  # Required
-            google_api_key=GOOGLE_API_KEY
-        )
-
+        embeddings = GoogleGenerativeAIEmbeddings(google_api_key=GOOGLE_API_KEY)
         vector_store = InMemoryVectorStore.from_documents(texts, embeddings=embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
@@ -150,10 +147,10 @@ def setup_agent():
 
     google_search_tool = None
     try:
-        if GOOGLE_API_KEY and GOOGLE_CSE_ID:
+        if GOOGLE_CSE_KEY and GOOGLE_CSE_ID:
             google_search = GoogleSearchAPIWrapper(
                 k=5,
-                google_api_key=GOOGLE_API_KEY,
+                google_api_key=GOOGLE_CSE_KEY,
                 google_cse_id=GOOGLE_CSE_ID
             )
             google_search_tool = Tool(
