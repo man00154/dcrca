@@ -1,10 +1,11 @@
 import streamlit as st
 import os
+import asyncio
 from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.chat_models import ChatOpenAI  # <-- Changed import here
+from langchain_community.chat_models import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
@@ -23,7 +24,7 @@ load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # for fallback
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not GOOGLE_API_KEY:
     st.warning("⚠ GOOGLE_API_KEY not found — will use fallback model if Gemini is unavailable.")
@@ -51,11 +52,22 @@ with st.expander("Expand to see the simulated log data"):
 def setup_rag_system():
     st.info("Initializing RAG system (Vector Store)...")
     try:
+        # Ensure event loop exists in this thread
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001",
+            google_api_key=GOOGLE_API_KEY
+        )
         vector_store = FAISS.from_documents(texts, embeddings)
+
         st.success("RAG system initialized successfully!")
         return vector_store
     except Exception as e:
@@ -69,23 +81,27 @@ vector_store = setup_rag_system()
 def setup_agent():
     st.info("Initializing Agentic AI...")
 
-    # Step 1: Try Gemini
     try:
         if GOOGLE_API_KEY:
-            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2, google_api_key=GOOGLE_API_KEY)
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash-latest",
+                temperature=0.2,
+                google_api_key=GOOGLE_API_KEY
+            )
         else:
             raise ValueError("No GOOGLE_API_KEY found")
-
-    # Step 2: Fallback to OpenAI
     except Exception as e:
-        st.warning(f"⚠ Gemini API not available or quota exceeded — switching to OpenAI model. ({e})")
+        st.warning(f"⚠ Gemini API not available — switching to OpenAI. ({e})")
         if not OPENAI_API_KEY:
             st.error("No fallback API key found — cannot initialize LLM.")
             return None, None, None
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, openai_api_key=OPENAI_API_KEY)
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            openai_api_key=OPENAI_API_KEY
+        )
 
     try:
-        # Google Search Tool (optional)
         google_search_tool = None
         if GOOGLE_API_KEY and GOOGLE_CSE_ID:
             google_search = GoogleSearchAPIWrapper(
@@ -95,7 +111,7 @@ def setup_agent():
             )
             google_search_tool = Tool(
                 name="Google Search",
-                description="Useful for searching the internet for real-time information.",
+                description="Useful for real-time internet information.",
                 func=google_search.run
             )
 
@@ -148,11 +164,7 @@ agent_executor, tools, tool_names = setup_agent()
 
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
-st.markdown(
-    """
-    This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
-    """
-)
+st.markdown("AI-powered RCA tool for data centre incidents.")
 
 incident_description = st.text_area(
     "**Describe the incident:**",
@@ -174,12 +186,8 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                     context_text = "\n".join([doc.page_content for doc in retrieved_docs])
 
                     st.divider()
-                    st.info("### 📝 Relevant Logs and Context from RAG")
-                    st.text_area(
-                        "RAG System Retrieved the following relevant documents:",
-                        context_text,
-                        height=200
-                    )
+                    st.info("### 📝 Relevant Logs from RAG")
+                    st.text_area("RAG Retrieved:", context_text, height=200)
 
                     agent_output = agent_executor.invoke({
                         "input": incident_description,
@@ -189,11 +197,10 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                     })
 
                     st.divider()
-                    st.info("### 🤖 Agentic AI Root Cause Analysis")
+                    st.info("### 🤖 Agentic AI RCA")
                     if isinstance(agent_output, dict) and "output" in agent_output:
                         st.markdown(agent_output["output"])
                     else:
                         st.markdown(str(agent_output))
-
                 except Exception as e:
                     st.error(f"An error occurred during analysis: {e}")
