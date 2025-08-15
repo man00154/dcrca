@@ -1,9 +1,18 @@
 streamlit
-google-generativeai
-langchain
-langchain_google_genai
-faiss-cpu
-scikit-learn
 python-dotenv
-tiktoken
+faiss-cpu
+pypdf
+requests
+urllib3
+tqdm
+beautifulsoup4
+lxml
+
+# LangChain core and integrations
+langchain
 langchain-community
+langchain-core
+langchain-google-genai
+
+# If you want to use OpenAI fallback
+openai
