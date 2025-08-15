@@ -50,7 +50,6 @@ st.sidebar.markdown("## ⚙️ Cache Management")
 if st.sidebar.button("Clear Session Cache"):
     st.session_state.session_cache = {}
     st.sidebar.success("✅ Session cache cleared.")
-
 if st.sidebar.button("Clear Disk Cache"):
     GEMINI_CACHE.clear()
     if os.path.exists(CACHE_FILE):
@@ -84,11 +83,12 @@ def setup_rag_system():
         except RuntimeError:
             asyncio.set_event_loop(asyncio.new_event_loop())
 
+        # Split logs into chunks
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
 
-        # ✅ Updated embedding model
+        # ✅ Correct embedding model supported by Google API
         embeddings = GoogleGenerativeAIEmbeddings(
             model="embed-gecko-v1",
             model_kwargs={"api_key": GOOGLE_API_KEY}
