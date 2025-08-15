@@ -1,19 +1,30 @@
-FROM python:3.9-slim
+# Use official Python image
+FROM python:3.10-slim
 
-# Set the working directory in the container
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
-COPY requirements.txt ./
+# Install OS dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install any needed packages specified in requirements.txt
+# Copy dependency list
+COPY requirements.txt .
+
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application source code into the container at /app
+# Copy application files
 COPY . .
 
-# Expose port 8501, which is the default port for Streamlit
+# Expose Streamlit default port
 EXPOSE 8501
 
-# Command to run the Streamlit application
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Run Streamlit app
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
