@@ -1,10 +1,11 @@
 streamlit==1.25.0
+numpy<2
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
 langchain==0.1.177
 langchain-core==0.0.196
 langchain-community==0.0.196
 langchain-groq==0.0.10
-sentence-transformers==2.2.2
-faiss-cpu==1.7.4  # ensure numpy<2
 langchain-google-genai==0.0.29
 google-api-python-client>=2.100.0
 python-dotenv==1.0.0
@@ -13,4 +14,3 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 lxml==4.9.3
 tqdm==4.66.1
-numpy<2
