@@ -4,7 +4,7 @@ import asyncio
 from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
-from langchain_community.vectorstores import VectorstoreIndexWrapper
+from langchain_community.vectorstores import InMemoryVectorStore
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.chat_models import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
@@ -79,10 +79,10 @@ with st.expander("Expand to see the simulated log data"):
     ]
     st.json(data_centre_logs)
 
-# --- RAG Setup (In-Memory VectorstoreIndexWrapper) ---
+# --- RAG Setup (In-Memory Vector Store) ---
 @st.cache_resource
 def setup_rag_system():
-    st.info("Initializing RAG system (In-Memory Vectorstore)...")
+    st.info("Initializing RAG system (In-Memory Vector Store)...")
     try:
         try:
             asyncio.get_running_loop()
@@ -93,8 +93,8 @@ def setup_rag_system():
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
 
-        # In-memory vector store wrapper
-        vector_store = VectorstoreIndexWrapper.from_documents(texts, embeddings=None)
+        # Use InMemoryVectorStore instead of VectorstoreIndexWrapper
+        vector_store = InMemoryVectorStore.from_documents(texts, embeddings=None)
         st.success("RAG system initialized successfully!")
         return vector_store
     except Exception as e:
