@@ -114,8 +114,8 @@ Provide the final RCA in this format:
             tools=tools_list,
             verbose=True,
             handle_parsing_errors=True,
-            max_iterations=3,
-            max_execution_time=60
+            max_iterations=12,          # Increased from 3 → 12
+            max_execution_time=90       # 90 seconds max runtime
         )
 
         st.success("Agentic AI initialized successfully!")
@@ -170,7 +170,10 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
 
                     st.divider()
                     st.info("### 🤖 Agentic AI Root Cause Analysis")
-                    st.markdown(agent_output["output"])
+                    if isinstance(agent_output, dict) and "output" in agent_output:
+                        st.markdown(agent_output["output"])
+                    else:
+                        st.markdown(str(agent_output))
 
                 except Exception as e:
                     st.error(f"An error occurred during analysis: {e}")
