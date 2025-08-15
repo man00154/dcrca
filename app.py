@@ -137,7 +137,6 @@ Reasoning & intermediate steps:
 Provide the final RCA in this format:
 
 **Root Cause:** <Explain the technical cause here>
-**Solution:** <Step-by-step remediation actions here>
 """
         prompt = PromptTemplate(
             template=template,
