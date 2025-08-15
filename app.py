@@ -88,8 +88,9 @@ def setup_rag_system():
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
 
+        # ✅ Updated embedding model
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="textembedding-gecko-001",  # updated model
+            model="embed-gecko-v1",
             model_kwargs={"api_key": GOOGLE_API_KEY}
         )
 
