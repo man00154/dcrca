@@ -1,7 +1,13 @@
 streamlit
-python-dotenv
 langchain
+langchain-communities
 langchain-google-genai
-langchain-community
-langchain-core
 faiss-cpu
+python-dotenv
+pypdf
+requests
+urllib3
+tqdm
+huggingface-hub
+beautifulsoup4
+lxml
