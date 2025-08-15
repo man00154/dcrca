@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import faiss
+from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
@@ -9,7 +9,6 @@ from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
 from langchain.docstore.document import Document
 from langchain.tools import Tool
-from dotenv import load_dotenv
 
 # --- Streamlit Page Config ---
 st.set_page_config(
@@ -21,7 +20,6 @@ st.set_page_config(
 # --- Load environment variables ---
 load_dotenv()
 
-# ✅ Check all required Google Search variables
 if not os.getenv("GOOGLE_API_KEY"):
     st.error("Please set the GOOGLE_API_KEY environment variable.")
     st.stop()
@@ -70,21 +68,18 @@ def setup_agent():
     try:
         llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
 
-        # ✅ Google Search API Wrapper
-        google_search_tool = GoogleSearchAPIWrapper(
+        google_search = GoogleSearchAPIWrapper(
             k=5,
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             google_cse_id=os.getenv("GOOGLE_CSE_ID")
         )
+        google_search_tool = Tool(
+            name="Google Search",
+            description="Useful for searching the internet for real-time information.",
+            func=google_search.run
+        )
 
-        # ✅ Wrap search tool into LangChain Tool
-        tools = [
-            Tool(
-                name="google_search",
-                func=google_search_tool.run,
-                description="Use this tool to search the web for the latest or external information."
-            )
-        ]
+        tools = [google_search_tool]
 
         template = """
         You are a highly skilled Data Centre Root Cause Analysis (RCA) expert...
