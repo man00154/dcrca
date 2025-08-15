@@ -8,6 +8,7 @@ from langchain.agents import AgentExecutor, create_react_agent
 from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
 from langchain.docstore.document import Document
+from langchain.tools import Tool
 from dotenv import load_dotenv
 
 # --- Streamlit Page Config ---
@@ -69,39 +70,35 @@ def setup_agent():
     try:
         llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
 
+        # ✅ Google Search API Wrapper
         google_search_tool = GoogleSearchAPIWrapper(
             k=5,
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             google_cse_id=os.getenv("GOOGLE_CSE_ID")
         )
-        tools = [google_search_tool]
 
-        # ✅ Correct ReAct prompt template with required vars
+        # ✅ Wrap search tool into LangChain Tool
+        tools = [
+            Tool(
+                name="google_search",
+                func=google_search_tool.run,
+                description="Use this tool to search the web for the latest or external information."
+            )
+        ]
+
         template = """
-You are a highly skilled Data Centre Root Cause Analysis (RCA) expert. 
-You have access to the following tools:
-{tools}
+        You are a highly skilled Data Centre Root Cause Analysis (RCA) expert...
+        {tools}
 
-When given an incident, think step-by-step and decide which tools to use to gather relevant data. 
-Always explain your reasoning before providing the root cause and recommendation.
-
-Incident: {input}
-
-Relevant Data Centre Logs:
-{context}
-
-You can use these tools: {tool_names}
-
-Previous reasoning and actions:
-{agent_scratchpad}
-
-Now, provide your next reasoning step or the final RCA.
-"""
-        prompt = PromptTemplate(
-            input_variables=["input", "context", "agent_scratchpad", "tool_names", "tools"],
-            template=template
-        )
-
+        The incident description is: '{input}'
+        
+        The internal data center logs and information are provided below:
+        ----------------
+        {context}
+        ----------------
+        ...
+        """
+        prompt = PromptTemplate.from_template(template)
         agent = create_react_agent(llm, tools, prompt)
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
         st.success("Agentic AI initialized successfully!")
@@ -114,9 +111,11 @@ agent_executor = setup_agent()
 
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
-st.markdown("""
-This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
-""")
+st.markdown(
+    """
+    This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
+    """
+)
 
 incident_description = st.text_area(
     "**Describe the incident:**",
@@ -145,10 +144,7 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                         height=200
                     )
 
-                    agent_output = agent_executor.invoke({
-                        "input": incident_description,
-                        "context": context_text
-                    })
+                    agent_output = agent_executor.invoke({"input": incident_description, "context": context_text})
 
                     st.divider()
                     st.info("### 🤖 Agentic AI Root Cause Analysis")
