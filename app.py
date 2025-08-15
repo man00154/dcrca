@@ -89,11 +89,11 @@ def setup_rag_system():
         texts = text_splitter.split_documents(docs)
 
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="embed-gecko-001",
+            model="textembedding-gecko-001",  # updated model
             model_kwargs={"api_key": GOOGLE_API_KEY}
         )
 
-        vector_store = InMemoryVectorStore.from_documents(texts, embedding=embeddings)
+        vector_store = InMemoryVectorStore.from_documents(texts, embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
     except Exception as e:
@@ -113,13 +113,11 @@ def setup_llm():
                 temperature=0.2,
                 google_api_key=GOOGLE_API_KEY
             )
-            # Test LLM
             llm.invoke("Hello")
             st.success("Gemini LLM initialized successfully!")
             return llm
         except Exception as gemini_error:
             st.warning(f"⚠ Gemini API unavailable or quota exceeded ({gemini_error})")
-    # Fallback to OpenAI
     if OPENAI_API_KEY:
         try:
             llm = ChatOpenAI(
@@ -171,7 +169,6 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                     st.info("### 📝 Relevant Logs from RAG")
                     st.text_area("RAG Retrieved:", context_text, height=200)
 
-                    # --- Generate RCA ---
                     prompt = f"""
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 
