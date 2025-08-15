@@ -66,8 +66,10 @@ def initialize_llm():
         return None
     return llm
 
+# Initialize LLM
 llm = initialize_llm()
 
+# --- RCA Button ---
 if st.button("Generate RCA & Solution"):
     if not incident_description.strip():
         st.warning("Please provide a description of the incident.")
@@ -78,6 +80,7 @@ if st.button("Generate RCA & Solution"):
         try:
             prompt = f"""
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
+
 Incident description: {incident_description}
 
 Provide the final RCA in this format:
