@@ -12,23 +12,21 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # --- Streamlit UI ---
 st.set_page_config(
-    page_title="MFG ITIS TCS TEAM - Intelligent Data Centre RCA",
+    page_title="TCS MFG ITIS - Intelligent Data Centre RCA",
     page_icon="🤖",
     layout="wide",
 )
-st.title("🤖 MFG ITIS TCS TEAM - Intelligent Data Centre Incident RCA")
-st.markdown("AI-powered RCA tool for data centre incidents.")
+st.title("🤖 TCS MFG ITIS - Intelligent Data Centre Incident RCA")
+st.markdown("AI-powered tool to generate Root Cause Analysis (RCA) and Solutions.")
 
 incident_description = st.text_area(
     "**Describe the incident:**",
-    value="The website is down. We're seeing slow performance on the home page and authentication is failing.",
+    value="Network-03: Users reporting intermittent connectivity; BGP sessions flapping; high I/O latency on servers.",
     height=150
 )
 
 def initialize_llm():
-    """
-    Initialize LLM: Try Gemini first, fallback to OpenAI if quota exceeded.
-    """
+    """Initialize LLM: Try Gemini first, fallback to OpenAI if quota exceeded."""
     llm = None
     try:
         if GOOGLE_API_KEY:
@@ -66,10 +64,8 @@ def initialize_llm():
         return None
     return llm
 
-# Initialize LLM
 llm = initialize_llm()
 
-# --- RCA Button ---
 if st.button("Generate RCA & Solution"):
     if not incident_description.strip():
         st.warning("Please provide a description of the incident.")
@@ -79,14 +75,13 @@ if st.button("Generate RCA & Solution"):
         st.info("Analyzing incident...")
         try:
             prompt = f"""
-You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
-
+You are a skilled Data Centre Root Cause Analysis (RCA) expert.
 Incident description: {incident_description}
 
-Provide the final RCA in this format:
+Provide the RCA and recommended solution in this format:
 
-**Root Cause:** <Explain the technical cause here>
-**Solution:** <Step-by-step remediation actions here>
+**Root Cause:** <Explain the technical cause>
+**Solution:** <Step-by-step remediation actions>
 """
             response = llm.invoke(prompt)
             st.markdown("### 🤖 RCA & Solution")
