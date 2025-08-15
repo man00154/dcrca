@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from langchain_community.chat_models import ChatOpenAI
+from langchain.chat_models import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
@@ -107,10 +107,7 @@ llm = setup_llm()
 
 # --- Agentic AI Setup ---
 @st.cache_resource
-def setup_agent():
-    if not llm:
-        return None
-
+def setup_agent(llm):
     template = """
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 
@@ -120,7 +117,7 @@ Incident description:
 Internal logs & context:
 {context}
 
-Reasoning & intermediate steps:
+Reasoning steps:
 {agent_scratchpad}
 
 Provide the final RCA in this format:
@@ -133,18 +130,11 @@ Provide the final RCA in this format:
         input_variables=["input", "context", "agent_scratchpad"]
     )
 
-    agent = create_react_agent(llm, tools=[], prompt=prompt)
-    agent_executor = AgentExecutor(
-        agent=agent,
-        tools=[],
-        verbose=True,
-        handle_parsing_errors=True,
-        max_iterations=12,
-        max_execution_time=90
-    )
-    return agent_executor
+    agent = create_react_agent(llm, [], prompt)
+    executor = AgentExecutor(agent=agent, tools=[], verbose=True)
+    return executor
 
-agent_executor = setup_agent()
+agent_executor = setup_agent(llm)
 
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
@@ -162,7 +152,7 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
     elif not llm or not agent_executor:
         st.error("Application components failed to initialize.")
     else:
-        with st.spinner("Analyzing incident... This may take a moment."):
+        with st.spinner("Analyzing incident..."):
             key = hashlib.sha256(incident_description.encode("utf-8")).hexdigest()
             cached_output = cache_response(key)
             if cached_output:
@@ -178,10 +168,13 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                         "context": context_text,
                         "agent_scratchpad": ""
                     })
-                    output_text = agent_output.get("output", str(agent_output))
                     st.divider()
                     st.info("### 🤖 RCA Output")
-                    st.markdown(output_text)
-                    cache_response(key, output_text)
+                    if isinstance(agent_output, dict) and "output" in agent_output:
+                        st.markdown(agent_output["output"])
+                        cache_response(key, agent_output["output"])
+                    else:
+                        st.markdown(str(agent_output))
+                        cache_response(key, str(agent_output))
                 except Exception as e:
                     st.error(f"An error occurred during analysis: {e}")
