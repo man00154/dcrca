@@ -1,11 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from langchain.chat_models import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
-from langchain.tools import Tool
 import hashlib
 import pickle
 
@@ -19,7 +15,6 @@ st.set_page_config(
 # --- Load environment variables ---
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # --- Cache Setup ---
 CACHE_FILE = "gemini_cache.pkl"
@@ -72,69 +67,26 @@ with st.expander("Expand to see the simulated log data"):
     ]
     st.json(data_centre_logs)
 
-# --- LLM Setup with OpenAI fallback ---
+# --- LLM Setup (Gemini / Google Generative AI) ---
 @st.cache_resource
 def setup_llm():
-    llm = None
-    if GOOGLE_API_KEY:
-        try:
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash-latest",
-                temperature=0.2,
-                google_api_key=GOOGLE_API_KEY
-            )
-            llm.invoke("Hello")
-            st.success("Gemini LLM initialized successfully!")
-            return llm
-        except Exception as gemini_error:
-            st.warning(f"⚠ Gemini API unavailable or quota exceeded ({gemini_error})")
-    if OPENAI_API_KEY:
-        try:
-            llm = ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=0.2,
-                openai_api_key=OPENAI_API_KEY
-            )
-            st.success("OpenAI LLM fallback initialized successfully!")
-            return llm
-        except Exception as openai_error:
-            st.error(f"OpenAI LLM initialization failed: {openai_error}")
-            return None
-    st.error("No LLM available. Please set GOOGLE_API_KEY or OPENAI_API_KEY.")
-    return None
+    if not GOOGLE_API_KEY:
+        st.error("Please set GOOGLE_API_KEY in .env")
+        return None
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash-latest",
+            temperature=0.2,
+            google_api_key=GOOGLE_API_KEY
+        )
+        llm.invoke("Hello")  # Test LLM
+        st.success("Gemini LLM initialized successfully!")
+        return llm
+    except Exception as e:
+        st.error(f"Gemini LLM initialization failed: {e}")
+        return None
 
 llm = setup_llm()
-
-# --- Agentic AI Setup ---
-@st.cache_resource
-def setup_agent(llm):
-    template = """
-You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
-
-Incident description:
-{input}
-
-Internal logs & context:
-{context}
-
-Reasoning steps:
-{agent_scratchpad}
-
-Provide the final RCA in this format:
-
-**Root Cause:** <Explain the technical cause here>
-**Solution:** <Step-by-step remediation actions here>
-"""
-    prompt = PromptTemplate(
-        template=template,
-        input_variables=["input", "context", "agent_scratchpad"]
-    )
-
-    agent = create_react_agent(llm, [], prompt)
-    executor = AgentExecutor(agent=agent, tools=[], verbose=True)
-    return executor
-
-agent_executor = setup_agent(llm)
 
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
@@ -149,10 +101,10 @@ incident_description = st.text_area(
 if st.button("Analyze Incident", type="primary", use_container_width=True):
     if not incident_description:
         st.warning("Please provide a description of the incident.")
-    elif not llm or not agent_executor:
-        st.error("Application components failed to initialize.")
+    elif not llm:
+        st.error("LLM failed to initialize.")
     else:
-        with st.spinner("Analyzing incident..."):
+        with st.spinner("Analyzing incident... This may take a moment."):
             key = hashlib.sha256(incident_description.encode("utf-8")).hexdigest()
             cached_output = cache_response(key)
             if cached_output:
@@ -162,19 +114,26 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                 st.markdown(cached_output)
             else:
                 try:
+                    # --- Create Agentic RCA Prompt ---
                     context_text = "\n".join(data_centre_logs)
-                    agent_output = agent_executor.invoke({
-                        "input": incident_description,
-                        "context": context_text,
-                        "agent_scratchpad": ""
-                    })
+                    prompt = f"""
+You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
+
+Incident description:
+{incident_description}
+
+Internal logs & context:
+{context_text}
+
+Provide the RCA in this format:
+
+**Root Cause:** <Explain the technical cause here>
+**Solution:** <Step-by-step remediation actions here>
+"""
+                    rca_output = llm.invoke(prompt)
                     st.divider()
                     st.info("### 🤖 RCA Output")
-                    if isinstance(agent_output, dict) and "output" in agent_output:
-                        st.markdown(agent_output["output"])
-                        cache_response(key, agent_output["output"])
-                    else:
-                        st.markdown(str(agent_output))
-                        cache_response(key, str(agent_output))
+                    st.markdown(rca_output)
+                    cache_response(key, rca_output)
                 except Exception as e:
                     st.error(f"An error occurred during analysis: {e}")
