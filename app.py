@@ -86,18 +86,11 @@ You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 You can use the following tools:
 {tools}
 
-Tool names: {tool_names}
-
-When analyzing an incident, decide if you need to use any of the tools above.
-Always reason step-by-step before giving your final answer.
-
 Incident description:
 {input}
 
 Internal logs & context:
-----------------
 {context}
-----------------
 
 Reasoning & intermediate steps:
 {agent_scratchpad}
@@ -107,10 +100,20 @@ Provide the final RCA in this format:
 **Root Cause:** <Explain the technical cause here>
 **Solution:** <Step-by-step remediation actions here>
 """
-        prompt = PromptTemplate.from_template(template)
+        prompt = PromptTemplate(
+            template=template,
+            input_variables=["input", "context", "agent_scratchpad", "tools"]
+        )
 
         agent = create_react_agent(llm, tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=tools,
+            verbose=True,
+            handle_parsing_errors=True,
+            max_iterations=3,   # limit loops
+            max_execution_time=60  # limit time (seconds)
+        )
 
         st.success("Agentic AI initialized successfully!")
         return agent_executor
