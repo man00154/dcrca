@@ -3,6 +3,9 @@ import os
 from dotenv import load_dotenv
 from langchain_community.chat_models import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.prompts import PromptTemplate
+from langchain.tools import Tool
 import hashlib
 import pickle
 
@@ -19,27 +22,27 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # --- Cache Setup ---
-CACHE_FILE = "agentic_cache.pkl"
+CACHE_FILE = "gemini_cache.pkl"
 if os.path.exists(CACHE_FILE):
     with open(CACHE_FILE, "rb") as f:
-        AGENTIC_CACHE = pickle.load(f)
+        GEMINI_CACHE = pickle.load(f)
 else:
-    AGENTIC_CACHE = {}
+    GEMINI_CACHE = {}
 
 if "session_cache" not in st.session_state:
     st.session_state.session_cache = {}
 
 def cache_response(key, response=None):
-    global AGENTIC_CACHE
+    global GEMINI_CACHE
     if response is None:
         if key in st.session_state.session_cache:
             return st.session_state.session_cache[key]
-        return AGENTIC_CACHE.get(key)
+        return GEMINI_CACHE.get(key)
     else:
         st.session_state.session_cache[key] = response
-        AGENTIC_CACHE[key] = response
+        GEMINI_CACHE[key] = response
         with open(CACHE_FILE, "wb") as f:
-            pickle.dump(AGENTIC_CACHE, f)
+            pickle.dump(GEMINI_CACHE, f)
 
 # --- Cache Management UI ---
 st.sidebar.markdown("## ⚙️ Cache Management")
@@ -47,7 +50,7 @@ if st.sidebar.button("Clear Session Cache"):
     st.session_state.session_cache = {}
     st.sidebar.success("✅ Session cache cleared.")
 if st.sidebar.button("Clear Disk Cache"):
-    AGENTIC_CACHE.clear()
+    GEMINI_CACHE.clear()
     if os.path.exists(CACHE_FILE):
         os.remove(CACHE_FILE)
     st.session_state.session_cache = {}
@@ -69,7 +72,7 @@ with st.expander("Expand to see the simulated log data"):
     ]
     st.json(data_centre_logs)
 
-# --- LLM Setup with Agentic AI ---
+# --- LLM Setup with OpenAI fallback ---
 @st.cache_resource
 def setup_llm():
     llm = None
@@ -80,7 +83,7 @@ def setup_llm():
                 temperature=0.2,
                 google_api_key=GOOGLE_API_KEY
             )
-            llm.invoke("Hello")  # test
+            llm.invoke("Hello")
             st.success("Gemini LLM initialized successfully!")
             return llm
         except Exception as gemini_error:
@@ -102,6 +105,47 @@ def setup_llm():
 
 llm = setup_llm()
 
+# --- Agentic AI Setup ---
+@st.cache_resource
+def setup_agent():
+    if not llm:
+        return None
+
+    template = """
+You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
+
+Incident description:
+{input}
+
+Internal logs & context:
+{context}
+
+Reasoning & intermediate steps:
+{agent_scratchpad}
+
+Provide the final RCA in this format:
+
+**Root Cause:** <Explain the technical cause here>
+**Solution:** <Step-by-step remediation actions here>
+"""
+    prompt = PromptTemplate(
+        template=template,
+        input_variables=["input", "context", "agent_scratchpad"]
+    )
+
+    agent = create_react_agent(llm, tools=[], prompt=prompt)
+    agent_executor = AgentExecutor(
+        agent=agent,
+        tools=[],
+        verbose=True,
+        handle_parsing_errors=True,
+        max_iterations=12,
+        max_execution_time=90
+    )
+    return agent_executor
+
+agent_executor = setup_agent()
+
 # --- UI ---
 st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
 st.markdown("AI-powered RCA tool for data centre incidents.")
@@ -115,37 +159,29 @@ incident_description = st.text_area(
 if st.button("Analyze Incident", type="primary", use_container_width=True):
     if not incident_description:
         st.warning("Please provide a description of the incident.")
-    elif not llm:
-        st.error("LLM failed to initialize. Cannot generate RCA.")
+    elif not llm or not agent_executor:
+        st.error("Application components failed to initialize.")
     else:
-        with st.spinner("Generating RCA... This may take a moment."):
+        with st.spinner("Analyzing incident... This may take a moment."):
             key = hashlib.sha256(incident_description.encode("utf-8")).hexdigest()
             cached_output = cache_response(key)
             if cached_output:
-                st.info("Using cached RCA output.")
+                st.info("Using cached RCA output (API quota saved).")
                 st.divider()
                 st.info("### 🤖 RCA Output")
                 st.markdown(cached_output)
             else:
                 try:
-                    prompt = f"""
-You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
-
-Incident description:
-{incident_description}
-
-Internal logs:
-{'\n'.join(data_centre_logs)}
-
-Provide the RCA in this format:
-
-**Root Cause:** <Explain the technical cause here>
-**Solution:** <Step-by-step remediation actions here>
-"""
-                    rca_output = llm.invoke(prompt)
+                    context_text = "\n".join(data_centre_logs)
+                    agent_output = agent_executor.invoke({
+                        "input": incident_description,
+                        "context": context_text,
+                        "agent_scratchpad": ""
+                    })
+                    output_text = agent_output.get("output", str(agent_output))
                     st.divider()
                     st.info("### 🤖 RCA Output")
-                    st.markdown(rca_output)
-                    cache_response(key, rca_output)
+                    st.markdown(output_text)
+                    cache_response(key, output_text)
                 except Exception as e:
-                    st.error(f"An error occurred during RCA generation: {e}")
+                    st.error(f"An error occurred during analysis: {e}")
