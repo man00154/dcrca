@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import base64
 import asyncio
+import aiohttp  # Added for async HTTP requests
 
 # The `st.set_page_config` should be the first Streamlit command
 st.set_page_config(
@@ -15,8 +16,7 @@ async def get_root_cause_from_llm(incident_data, initial_alert):
     """
     Calls the Gemini API to get a root cause analysis.
     
-    This function uses a simple fetch call to a predefined model.
-    In a real-world scenario, you would handle API keys securely.
+    This function uses aiohttp to send an async HTTP POST request.
     """
     
     # Construct the detailed prompt for the LLM
@@ -37,9 +37,7 @@ async def get_root_cause_from_llm(incident_data, initial_alert):
         "contents": chatHistory
     }
 
-    # IMPORTANT: Replace "YOUR_API_KEY_HERE" with your actual Gemini API key.
-    # In a production environment, you should use environment variables
-    # or a secret management service to store your API key securely.
+    # IMPORTANT: Replace with your actual Gemini API key
     apiKey = "AIzaSyA2W2u4HUZFll-UTlqCrRngAhVIphsrrns"
     apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key={apiKey}"
 
@@ -47,18 +45,14 @@ async def get_root_cause_from_llm(incident_data, initial_alert):
         'Content-Type': 'application/json'
     }
 
-    # Streamlit's `st.runtime.get_instance().is_lite_running` is a workaround for the fetch call in Streamlit apps.
-    # In a more robust deployment, you would use a standard Python http library like `requests`.
     try:
-        response_json = await st.runtime.forward_msg_to_server_on_session(
-            "fetch", {
-                "url": apiUrl,
-                "method": "POST",
-                "headers": headers,
-                "body": json.dumps(payload)
-            }
-        )
-        response_data = json.loads(response_json['body'])
+        async with aiohttp.ClientSession() as session:
+            async with session.post(apiUrl, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    st.error(f"API returned status code {resp.status}")
+                    return None
+                response_data = await resp.json()
+        
         if response_data.get('candidates'):
             return response_data['candidates'][0]['content']['parts'][0]['text']
         else:
