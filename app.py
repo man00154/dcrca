@@ -83,7 +83,7 @@ def setup_agent():
 
         # FIX: Added required placeholders {tools}, {tool_names}, {agent_scratchpad}
         template = """
-You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
+You are a highly skilled Data Centre Root Cause Analysis (RCA) expert providing RCA with solution.
 You can use the following tools:
 {tools}
 
@@ -102,6 +102,8 @@ Internal logs & context:
 
 Reasoning & intermediate steps:
 {agent_scratchpad}
+
+solution:
 """
         prompt = PromptTemplate.from_template(template)
 
