@@ -108,4 +108,3 @@ if st.button("Perform RCA", type="primary"):
                 st.info(result)
             else:
                 st.error("Failed to get an analysis result. Please check the provided data and try again.")
-
