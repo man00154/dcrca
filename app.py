@@ -80,11 +80,14 @@ def setup_agent():
         )
 
         tools = [google_search_tool]
+        tool_names = ", ".join([tool.name for tool in tools])
 
         template = """
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 You can use the following tools:
 {tools}
+
+Tool names available: {tool_names}
 
 Incident description:
 {input}
@@ -102,7 +105,7 @@ Provide the final RCA in this format:
 """
         prompt = PromptTemplate(
             template=template,
-            input_variables=["input", "context", "agent_scratchpad", "tools"]
+            input_variables=["input", "context", "agent_scratchpad", "tools", "tool_names"]
         )
 
         agent = create_react_agent(llm, tools, prompt)
@@ -111,8 +114,8 @@ Provide the final RCA in this format:
             tools=tools,
             verbose=True,
             handle_parsing_errors=True,
-            max_iterations=3,   # limit loops
-            max_execution_time=60  # limit time (seconds)
+            max_iterations=3,
+            max_execution_time=60
         )
 
         st.success("Agentic AI initialized successfully!")
@@ -160,7 +163,9 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
 
                     agent_output = agent_executor.invoke({
                         "input": incident_description,
-                        "context": context_text
+                        "context": context_text,
+                        "tools": tools,
+                        "tool_names": tool_names
                     })
 
                     st.divider()
