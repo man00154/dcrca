@@ -81,9 +81,8 @@ def setup_agent():
 
         tools = [google_search_tool]
 
-        # FIX: Added required placeholders {tools}, {tool_names}, {agent_scratchpad}
         template = """
-You are a highly skilled Data Centre Root Cause Analysis (RCA) expert providing RCA with solution.
+You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 You can use the following tools:
 {tools}
 
@@ -103,7 +102,10 @@ Internal logs & context:
 Reasoning & intermediate steps:
 {agent_scratchpad}
 
-solution:
+Provide the final RCA in this format:
+
+**Root Cause:** <Explain the technical cause here>
+**Solution:** <Step-by-step remediation actions here>
 """
         prompt = PromptTemplate.from_template(template)
 
@@ -153,7 +155,10 @@ if st.button("Analyze Incident", type="primary", use_container_width=True):
                         height=200
                     )
 
-                    agent_output = agent_executor.invoke({"input": incident_description, "context": context_text})
+                    agent_output = agent_executor.invoke({
+                        "input": incident_description,
+                        "context": context_text
+                    })
 
                     st.divider()
                     st.info("### 🤖 Agentic AI Root Cause Analysis")
