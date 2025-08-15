@@ -94,13 +94,13 @@ def setup_rag_system():
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
 
-        # ✅ Correct embeddings initialization with `embedding` argument
+        # ✅ Corrected embeddings initialization
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="textembedding-gecko-001",
+            model="embed-gecko-001",  # Correct embedding model
             model_kwargs={"api_key": GOOGLE_API_KEY}
         )
 
-        vector_store = InMemoryVectorStore.from_documents(documents=texts, embedding=embeddings)
+        vector_store = InMemoryVectorStore.from_documents(texts, embedding=embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
     except Exception as e:
