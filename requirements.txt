@@ -1,9 +1,9 @@
 streamlit
 langchain
-langchain-community
+langchain-communities
 langchain-google-genai
-faiss-cpu
 python-dotenv
+faiss-cpu
 pypdf
 requests
 urllib3
@@ -11,4 +11,3 @@ tqdm
 huggingface-hub
 beautifulsoup4
 lxml
-openai
