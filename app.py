@@ -7,8 +7,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.docstore.document import Document
 from dotenv import load_dotenv
 
@@ -19,15 +17,19 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- Load environment variables ---
+# --- Load environment variables from .env ---
 load_dotenv()
 
-# ✅ Check all required Google Search variables
-if not os.getenv("GOOGLE_API_KEY"):
-    st.error("Please set the GOOGLE_API_KEY environment variable.")
+# --- Fallback: load from Streamlit secrets if not in .env ---
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", st.secrets.get("GOOGLE_API_KEY", ""))
+GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", st.secrets.get("GOOGLE_CSE_ID", ""))
+
+# --- Validate keys ---
+if not GOOGLE_API_KEY:
+    st.error("Please set the GOOGLE_API_KEY in .env or Streamlit secrets.")
     st.stop()
-if not os.getenv("GOOGLE_CSE_ID"):
-    st.error("Please set the GOOGLE_CSE_ID environment variable.")
+if not GOOGLE_CSE_ID:
+    st.error("Please set the GOOGLE_CSE_ID in .env or Streamlit secrets.")
     st.stop()
 
 # --- Simulated Logs ---
@@ -54,7 +56,7 @@ def setup_rag_system():
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
         vector_store = FAISS.from_documents(texts, embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
@@ -69,18 +71,17 @@ vector_store = setup_rag_system()
 def setup_agent():
     st.info("Initializing Agentic AI...")
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2, google_api_key=GOOGLE_API_KEY)
 
-        # ✅ Pass the env variables into GoogleSearchAPIWrapper
         google_search_tool = GoogleSearchAPIWrapper(
             k=5,
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            google_cse_id=os.getenv("GOOGLE_CSE_ID")
+            google_api_key=GOOGLE_API_KEY,
+            google_cse_id=GOOGLE_CSE_ID
         )
         tools = [google_search_tool]
 
         template = """
-        You are a highly skilled Data Centre Root Cause Analysis (RCA) expert...
+        You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
         {tools}
 
         The incident description is: '{input}'
@@ -89,7 +90,7 @@ def setup_agent():
         ----------------
         {context}
         ----------------
-        ...
+        Provide a detailed root cause analysis.
         """
         prompt = PromptTemplate.from_template(template)
         agent = create_react_agent(llm, tools, prompt)
