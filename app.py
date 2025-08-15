@@ -1,12 +1,8 @@
 import streamlit as st
 import os
-import asyncio
 from dotenv import load_dotenv
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document
-from langchain_community.vectorstores import InMemoryVectorStore
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.chat_models import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 import hashlib
 import pickle
 
@@ -23,27 +19,27 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # --- Cache Setup ---
-CACHE_FILE = "gemini_cache.pkl"
+CACHE_FILE = "agentic_cache.pkl"
 if os.path.exists(CACHE_FILE):
     with open(CACHE_FILE, "rb") as f:
-        GEMINI_CACHE = pickle.load(f)
+        AGENTIC_CACHE = pickle.load(f)
 else:
-    GEMINI_CACHE = {}
+    AGENTIC_CACHE = {}
 
 if "session_cache" not in st.session_state:
     st.session_state.session_cache = {}
 
 def cache_response(key, response=None):
-    global GEMINI_CACHE
+    global AGENTIC_CACHE
     if response is None:
         if key in st.session_state.session_cache:
             return st.session_state.session_cache[key]
-        return GEMINI_CACHE.get(key)
+        return AGENTIC_CACHE.get(key)
     else:
         st.session_state.session_cache[key] = response
-        GEMINI_CACHE[key] = response
+        AGENTIC_CACHE[key] = response
         with open(CACHE_FILE, "wb") as f:
-            pickle.dump(GEMINI_CACHE, f)
+            pickle.dump(AGENTIC_CACHE, f)
 
 # --- Cache Management UI ---
 st.sidebar.markdown("## ⚙️ Cache Management")
@@ -51,7 +47,7 @@ if st.sidebar.button("Clear Session Cache"):
     st.session_state.session_cache = {}
     st.sidebar.success("✅ Session cache cleared.")
 if st.sidebar.button("Clear Disk Cache"):
-    GEMINI_CACHE.clear()
+    AGENTIC_CACHE.clear()
     if os.path.exists(CACHE_FILE):
         os.remove(CACHE_FILE)
     st.session_state.session_cache = {}
@@ -73,37 +69,7 @@ with st.expander("Expand to see the simulated log data"):
     ]
     st.json(data_centre_logs)
 
-# --- RAG Setup ---
-@st.cache_resource
-def setup_rag_system():
-    st.info("Initializing RAG system (In-Memory Vector Store)...")
-    try:
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
-
-        # Split logs into chunks
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        docs = [Document(page_content=log) for log in data_centre_logs]
-        texts = text_splitter.split_documents(docs)
-
-        # ✅ Correct embedding model supported by Google API
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model="embed-gecko-v1",
-            model_kwargs={"api_key": GOOGLE_API_KEY}
-        )
-
-        vector_store = InMemoryVectorStore.from_documents(texts, embeddings)
-        st.success("RAG system initialized successfully!")
-        return vector_store
-    except Exception as e:
-        st.error(f"Failed to initialize RAG system: {e}")
-        return None
-
-vector_store = setup_rag_system()
-
-# --- LLM Setup with OpenAI fallback ---
+# --- LLM Setup with Agentic AI ---
 @st.cache_resource
 def setup_llm():
     llm = None
@@ -114,7 +80,7 @@ def setup_llm():
                 temperature=0.2,
                 google_api_key=GOOGLE_API_KEY
             )
-            llm.invoke("Hello")
+            llm.invoke("Hello")  # test
             st.success("Gemini LLM initialized successfully!")
             return llm
         except Exception as gemini_error:
@@ -149,35 +115,27 @@ incident_description = st.text_area(
 if st.button("Analyze Incident", type="primary", use_container_width=True):
     if not incident_description:
         st.warning("Please provide a description of the incident.")
-    elif not vector_store or not llm:
-        st.error("Application components failed to initialize.")
+    elif not llm:
+        st.error("LLM failed to initialize. Cannot generate RCA.")
     else:
-        with st.spinner("Analyzing incident... This may take a moment."):
+        with st.spinner("Generating RCA... This may take a moment."):
             key = hashlib.sha256(incident_description.encode("utf-8")).hexdigest()
             cached_output = cache_response(key)
             if cached_output:
-                st.info("Using cached RCA output (API quota saved).")
+                st.info("Using cached RCA output.")
                 st.divider()
                 st.info("### 🤖 RCA Output")
                 st.markdown(cached_output)
             else:
                 try:
-                    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-                    retrieved_docs = retriever.invoke(incident_description)
-                    context_text = "\n".join([doc.page_content for doc in retrieved_docs])
-
-                    st.divider()
-                    st.info("### 📝 Relevant Logs from RAG")
-                    st.text_area("RAG Retrieved:", context_text, height=200)
-
                     prompt = f"""
 You are a highly skilled Data Centre Root Cause Analysis (RCA) expert.
 
 Incident description:
 {incident_description}
 
-Internal logs & context:
-{context_text}
+Internal logs:
+{'\n'.join(data_centre_logs)}
 
 Provide the RCA in this format:
 
@@ -190,4 +148,4 @@ Provide the RCA in this format:
                     st.markdown(rca_output)
                     cache_response(key, rca_output)
                 except Exception as e:
-                    st.error(f"An error occurred during analysis: {e}")
+                    st.error(f"An error occurred during RCA generation: {e}")
