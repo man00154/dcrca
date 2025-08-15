@@ -3,8 +3,8 @@ import os
 from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import GPT4All
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_community.tools.google_search.tool import GoogleSearchAPIWrapper
 from langchain_core.prompts import PromptTemplate
@@ -13,7 +13,7 @@ from langchain.tools import Tool
 
 # --- Streamlit Page Config ---
 st.set_page_config(
-    page_title="MFG ITIS TEAM - Intelligent Data Centre RCA (GPT4All)",
+    page_title="MFG ITIS TEAM - Intelligent Data Centre RCA",
     page_icon="🤖",
     layout="wide",
 )
@@ -21,9 +21,14 @@ st.set_page_config(
 # --- Load environment variables ---
 load_dotenv()
 
-# Google Search API optional (only used if API keys provided)
-google_api_key = os.getenv("GOOGLE_API_KEY", "")
-google_cse_id = os.getenv("GOOGLE_CSE_ID", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # for fallback
+
+if not GOOGLE_API_KEY:
+    st.warning("⚠ GOOGLE_API_KEY not found — will use fallback model if Gemini is unavailable.")
+if not GOOGLE_CSE_ID:
+    st.warning("⚠ GOOGLE_CSE_ID not found — Google Search tool may not work.")
 
 # --- Simulated Logs ---
 st.markdown("## 🧠 Simulated Data Base")
@@ -49,7 +54,7 @@ def setup_rag_system():
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=log) for log in data_centre_logs]
         texts = text_splitter.split_documents(docs)
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
         vector_store = FAISS.from_documents(texts, embeddings)
         st.success("RAG system initialized successfully!")
         return vector_store
@@ -62,30 +67,39 @@ vector_store = setup_rag_system()
 # --- Agent Setup ---
 @st.cache_resource
 def setup_agent():
-    st.info("Initializing Agentic AI with GPT4All...")
+    st.info("Initializing Agentic AI...")
+
+    # Step 1: Try Gemini
     try:
-        # Local GPT4All model path
-        gpt4all_path = os.getenv("GPT4ALL_MODEL_PATH", "models/ggml-gpt4all-j-v1.3-groovy.bin")
-        if not os.path.exists(gpt4all_path):
-            st.error(f"GPT4All model not found at: {gpt4all_path}")
+        if GOOGLE_API_KEY:
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2, google_api_key=GOOGLE_API_KEY)
+        else:
+            raise ValueError("No GOOGLE_API_KEY found")
+
+    # Step 2: Fallback to OpenAI
+    except Exception as e:
+        st.warning(f"⚠ Gemini API not available or quota exceeded — switching to OpenAI model. ({e})")
+        if not OPENAI_API_KEY:
+            st.error("No fallback API key found — cannot initialize LLM.")
             return None, None, None
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, api_key=OPENAI_API_KEY)
 
-        llm = GPT4All(model=gpt4all_path, temp=0.2, verbose=False)
-
-        tools_list = []
-        if google_api_key and google_cse_id:
+    try:
+        # Google Search Tool (optional)
+        google_search_tool = None
+        if GOOGLE_API_KEY and GOOGLE_CSE_ID:
             google_search = GoogleSearchAPIWrapper(
                 k=5,
-                google_api_key=google_api_key,
-                google_cse_id=google_cse_id
+                google_api_key=GOOGLE_API_KEY,
+                google_cse_id=GOOGLE_CSE_ID
             )
             google_search_tool = Tool(
                 name="Google Search",
                 description="Useful for searching the internet for real-time information.",
                 func=google_search.run
             )
-            tools_list.append(google_search_tool)
 
+        tools_list = [google_search_tool] if google_search_tool else []
         tool_names_list = ", ".join([tool.name for tool in tools_list]) if tools_list else "None"
 
         template = """
@@ -124,7 +138,7 @@ Provide the final RCA in this format:
             max_execution_time=90
         )
 
-        st.success("Agentic AI initialized successfully with GPT4All!")
+        st.success("Agentic AI initialized successfully!")
         return agent_executor, tools_list, tool_names_list
     except Exception as e:
         st.error(f"Failed to initialize Agentic AI: {e}")
@@ -133,11 +147,10 @@ Provide the final RCA in this format:
 agent_executor, tools, tool_names = setup_agent()
 
 # --- UI ---
-st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA (Offline)")
+st.title("🤖 MFG ITIS TEAM - Intelligent Data Centre Incident RCA")
 st.markdown(
     """
     This application simulates an AI-powered tool for root cause analysis (RCA) of data centre incidents.
-    Now running **fully offline** using GPT4All — no API quota issues.
     """
 )
 
